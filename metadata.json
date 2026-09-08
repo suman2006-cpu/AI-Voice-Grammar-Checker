@@ -1,0 +1,6 @@
+{
+  "name": "AI Voice Language Tutor",
+  "description": "An interactive voice language tutor that transcribes your speech, analyzes grammar and vocabulary with Gemini, and speaks corrected sentences back to you.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <script>
+      // Silence Vite HMR WebSocket connection errors (HMR is disabled in AI Studio container)
+      (function () {
+        if (typeof window === 'undefined') return;
+
+        // Suppress unhandled promise rejections related to WebSocket / Vite
+        window.addEventListener('unhandledrejection', function (event) {
+          var reason = (event && (event.reason && (event.reason.message || event.reason))) || '';
+          if (typeof reason === 'string' && /websocket|closed without opened|vite/i.test(reason)) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+          }
+        }, true);
+
+        // Suppress global window errors related to WebSocket / Vite
+        window.addEventListener('error', function (event) {
+          var msg = (event && (event.message || (event.error && event.error.message))) || '';
+          if (typeof msg === 'string' && /websocket|closed without opened|vite/i.test(msg)) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+          }
+        }, true);
+
+        // Filter out Vite HMR WebSocket console errors
+        var origConsoleError = console.error;
+        console.error = function () {
+          var text = Array.prototype.slice.call(arguments).map(function (arg) {
+            return String((arg && (arg.message || arg)) || '');
+          }).join(' ');
+          if (/websocket|closed without opened|failed to connect to websocket/i.test(text)) {
+            return;
+          }
+          origConsoleError.apply(console, arguments);
+        };
+
+        // Stub the WebSocket constructor for Vite HMR connections to prevent connection attempts
+        if (typeof window.WebSocket !== 'undefined') {
+          var RealWebSocket = window.WebSocket;
+          var DummyWebSocket = function (url, protocols) {
+            var isViteHmr = (typeof url === 'string' && (url.indexOf('vite') !== -1 || url.indexOf('3000') !== -1)) ||
+              protocols === 'vite-hmr' ||
+              (Array.isArray(protocols) && protocols.indexOf('vite-hmr') !== -1);
+
+            if (isViteHmr) {
+              // Return a benign closed socket mock that does not emit unhandled errors
+              return {
+                binaryType: 'blob',
+                bufferedAmount: 0,
+                extensions: '',
+                protocol: 'vite-hmr',
+                readyState: 3, // CLOSED
+                url: url,
+                addEventListener: function () {},
+                removeEventListener: function () {},
+                dispatchEvent: function () { return false; },
+                send: function () {},
+                close: function () {},
+                onopen: null,
+                onclose: null,
+                onerror: null,
+                onmessage: null,
+              };
+            }
+            return new RealWebSocket(url, protocols);
+          };
+          DummyWebSocket.prototype = RealWebSocket.prototype;
+          DummyWebSocket.CONNECTING = RealWebSocket.CONNECTING;
+          DummyWebSocket.OPEN = RealWebSocket.OPEN;
+          DummyWebSocket.CLOSING = RealWebSocket.CLOSING;
+          DummyWebSocket.CLOSED = RealWebSocket.CLOSED;
+          window.WebSocket = DummyWebSocket;
+        }
+      })();
+    </script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI Voice Language Tutor</title>
+    <meta name="description" content="An interactive voice language tutor that transcribes your speech, analyzes grammar and vocabulary with Gemini, and speaks corrected sentences back to you." />
+    <meta property="og:title" content="AI Voice Language Tutor" />
+    <meta property="og:description" content="An interactive voice language tutor that transcribes your speech, analyzes grammar and vocabulary with Gemini, and speaks corrected sentences back to you." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script>
+      (function() {
+        try {
+          var saved = localStorage.getItem('ai_voice_tutor_theme') || localStorage.getItem('theme');
+          var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+          if (saved === 'dark' || (!saved && prefersDark)) {
+            document.documentElement.classList.add('dark');
+            document.documentElement.setAttribute('data-theme', 'dark');
+            document.documentElement.style.colorScheme = 'dark';
+          } else {
+            document.documentElement.classList.remove('dark');
+            document.documentElement.setAttribute('data-theme', 'light');
+            document.documentElement.style.colorScheme = 'light';
+          }
+        } catch (e) {}
+      })();
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+  </head>
+  <body class="bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 antialiased selection:bg-indigo-500 selection:text-white min-h-screen transition-colors duration-200">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+
