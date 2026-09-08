@@ -197,7 +197,10 @@ export const AudioRecorder: React.FC<AudioRecorderProps> = ({
 
       {/* Error banner */}
       {error && (
-        <div id="recording-error-banner" className="mt-4 p-3.5 bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-900/60 rounded-2xl flex items-start justify-between gap-3 text-left max-w-lg mx-auto">
+        <div
+          id="recording-error-banner"
+          className="mt-4 p-3.5 bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-900/60 rounded-2xl flex items-start justify-between gap-3 text-left max-w-lg mx-auto"
+        >
           <div className="flex items-start gap-2.5">
             <AlertCircle className="w-5 h-5 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
             <div className="text-xs sm:text-sm text-rose-800 dark:text-rose-300">

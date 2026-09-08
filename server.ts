@@ -1,13 +1,44 @@
+import fs from 'fs';
+import path from 'path';
 import dotenv from 'dotenv';
+
+// 1. Load default .env
 dotenv.config();
 
+// 2. Load .env.local if present (common for local laptop development)
+try {
+  const envLocal = path.resolve(process.cwd(), '.env.local');
+  if (fs.existsSync(envLocal)) {
+    dotenv.config({ path: envLocal, override: true });
+  }
+} catch {
+  // ignore
+}
+
+// 3. Fallback: If user cloned repo and pasted key directly into .env.example
+try {
+  if (!process.env.GEMINI_API_KEY) {
+    const envExample = path.resolve(process.cwd(), '.env.example');
+    if (fs.existsSync(envExample)) {
+      const content = fs.readFileSync(envExample, 'utf8');
+      const match = content.match(/^GEMINI_API_KEY=["']?([^"'\r\n]+)["']?/m);
+      if (match && match[1] && !match[1].includes('your-gemini-api-key') && match[1].trim()) {
+        process.env.GEMINI_API_KEY = match[1].trim();
+      }
+    }
+  }
+} catch {
+  // ignore
+}
+
 import express, { Request, Response, NextFunction } from 'express';
-import path from 'path';
-import fs from 'fs';
 import { GoogleGenAI, Type } from '@google/genai';
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
+
+// Runtime in-memory API key cache (supports programmatic or session key setting)
+let serverInMemoryApiKey = '';
 
 // Middleware for parsing json and urlencoded data with ample capacity for base64 audio
 app.use(express.json({ limit: '50mb' }));
@@ -23,18 +54,36 @@ function sanitizeErrorMessage(msg: string): string {
     .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, 'Bearer ***');
 }
 
-// Lazy Gemini AI initialization
-let aiClient: GoogleGenAI | null = null;
-function getAIClient(): GoogleGenAI {
-  const rawKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || '';
-  const apiKey = rawKey.trim().replace(/^["']|["']$/g, '');
+/**
+ * Extracts Gemini API key from request headers, runtime memory, or environment variables.
+ */
+function getApiKey(req?: Request): string {
+  const headerKey = (req?.headers?.['x-gemini-api-key'] as string) || '';
+  const authHeader = (req?.headers?.['authorization'] as string) || '';
+  const bearerKey = authHeader.startsWith('Bearer ') ? authHeader.substring(7) : '';
+  const rawKey =
+    headerKey ||
+    bearerKey ||
+    serverInMemoryApiKey ||
+    process.env.GEMINI_API_KEY ||
+    process.env.VITE_GEMINI_API_KEY ||
+    process.env.GOOGLE_API_KEY ||
+    process.env.API_KEY ||
+    '';
+  return rawKey.trim().replace(/^["']|["']$/g, '');
+}
+
+/**
+ * Lazy Gemini AI initialization with per-request key support.
+ */
+function getAIClient(req?: Request): GoogleGenAI {
+  const apiKey = getApiKey(req);
   if (!apiKey) {
-    throw new Error('GEMINI_API_KEY environment variable is not configured on the server. If using Vercel, please add GEMINI_API_KEY under Project Settings > Environment Variables, and click Redeploy.');
+    throw new Error(
+      'GEMINI_API_KEY is not configured on the server. Please add GEMINI_API_KEY="your_api_key_here" in a .env file in the project root on your laptop, then restart the server.'
+    );
   }
-  if (!aiClient) {
-    aiClient = new GoogleGenAI({ apiKey });
-  }
-  return aiClient;
+  return new GoogleGenAI({ apiKey });
 }
 
 // In-memory practice session store
@@ -59,14 +108,102 @@ const practiceSessionsStore: PracticeSessionRecord[] = [];
 
 // Health check (supports both /api/health and /health)
 app.get(['/api/health', '/health'], (req: Request, res: Response) => {
-  const rawKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || '';
-  const apiKey = rawKey.trim().replace(/^["']|["']$/g, '');
+  const apiKey = getApiKey(req);
   res.json({
     status: 'ok',
     service: 'AI Voice Language Tutor API',
     geminiConfigured: Boolean(apiKey),
     keyPrefix: apiKey ? `${apiKey.substring(0, 6)}...` : null,
+    source: req.headers['x-gemini-api-key']
+      ? 'client-header'
+      : serverInMemoryApiKey
+      ? 'runtime-memory'
+      : process.env.GEMINI_API_KEY
+      ? 'environment'
+      : 'none',
   });
+});
+
+// API Key configuration endpoint for local laptop setup
+app.get(['/api/config/api-key', '/config/api-key'], (req: Request, res: Response) => {
+  const apiKey = getApiKey(req);
+  res.json({
+    configured: Boolean(apiKey),
+    keyPrefix: apiKey ? `${apiKey.substring(0, 6)}...` : null,
+    source: req.headers['x-gemini-api-key']
+      ? 'client-header'
+      : serverInMemoryApiKey
+      ? 'runtime-memory'
+      : process.env.GEMINI_API_KEY
+      ? 'environment'
+      : 'none',
+  });
+});
+
+app.post(['/api/config/api-key', '/config/api-key'], async (req: Request, res: Response) => {
+  try {
+    const { apiKey } = req.body;
+    const cleanKey = (apiKey || '').trim().replace(/^["']|["']$/g, '');
+    if (!cleanKey) {
+      return res.status(400).json({ error: 'API key cannot be empty' });
+    }
+
+    // Verify key with a fast, lightweight call
+    try {
+      const testAi = new GoogleGenAI({ apiKey: cleanKey });
+      await testAi.models.generateContent({
+        model: 'gemini-3.1-flash-lite',
+        contents: 'Say OK',
+      });
+    } catch (testErr: any) {
+      console.warn('Gemini API key verification warning:', testErr);
+      const errMsg = testErr?.message || String(testErr);
+      if (
+        errMsg.includes('API_KEY_INVALID') ||
+        errMsg.includes('key not valid') ||
+        testErr?.status === 400 ||
+        testErr?.status === 403
+      ) {
+        return res.status(400).json({
+          error: 'Invalid Gemini API Key. Please verify the key from Google AI Studio (https://aistudio.google.com/app/apikey).',
+        });
+      }
+    }
+
+    // Save in server memory
+    serverInMemoryApiKey = cleanKey;
+
+    // Also persist to .env.local file if on local filesystem
+    let savedToFile = false;
+    try {
+      const envPath = path.resolve(process.cwd(), '.env.local');
+      let content = '';
+      if (fs.existsSync(envPath)) {
+        content = fs.readFileSync(envPath, 'utf8');
+        if (/^GEMINI_API_KEY=/m.test(content)) {
+          content = content.replace(/^GEMINI_API_KEY=.*$/m, `GEMINI_API_KEY=${cleanKey}`);
+        } else {
+          content += `\nGEMINI_API_KEY=${cleanKey}\n`;
+        }
+      } else {
+        content = `# Local Environment Variables\nGEMINI_API_KEY=${cleanKey}\n`;
+      }
+      fs.writeFileSync(envPath, content, 'utf8');
+      savedToFile = true;
+    } catch (fsErr) {
+      console.warn('Could not write .env.local file:', fsErr);
+    }
+
+    res.json({
+      success: true,
+      message: savedToFile
+        ? 'Gemini API key verified and saved to .env.local on your laptop'
+        : 'Gemini API key verified and loaded into active server session',
+      keyPrefix: `${cleanKey.substring(0, 6)}...`,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to configure API key' });
+  }
 });
 
 /**
@@ -128,7 +265,7 @@ app.post(['/api/transcribe', '/transcribe'], async (req: Request, res: Response)
       return res.status(400).json({ error: 'No audio data provided' });
     }
 
-    const ai = getAIClient();
+    const ai = getAIClient(req);
 
     // Clean MIME type (e.g., 'audio/webm;codecs=opus' -> 'audio/webm')
     const cleanMimeType = (mimeType || 'audio/webm').split(';')[0].trim();
@@ -230,7 +367,7 @@ app.post(['/api/analyze', '/analyze'], async (req: Request, res: Response) => {
 
     const lang = targetLanguage || 'English';
     const level = difficultyLevel || 'intermediate';
-    const ai = getAIClient();
+    const ai = getAIClient(req);
 
     const systemInstruction = `You are a friendly, encouraging, and expert language tutor.
 A learner will provide a spoken sentence that has been converted to text.
@@ -475,7 +612,7 @@ app.post(['/api/speak', '/speak'], async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Text parameter is required' });
     }
 
-    const ai = getAIClient();
+    const ai = getAIClient(req);
 
     try {
       const response = await ai.models.generateContent({
@@ -596,7 +733,17 @@ async function startServer() {
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`AI Voice Language Tutor server listening on http://0.0.0.0:${PORT} (mode: ${isProduction ? 'production' : 'development'})`);
+    const key = getApiKey();
+    console.log(`\n======================================================`);
+    console.log(`  AI Voice Language Tutor running at http://localhost:${PORT}`);
+    if (key) {
+      console.log(`  Gemini API Key: Configured (${key.substring(0, 6)}...)`);
+    } else {
+      console.log(`  Gemini API Key: NOT FOUND`);
+      console.log(`  To enable AI speech & grammar features locally:`);
+      console.log(`  Create a .env file with: GEMINI_API_KEY=your_key_here`);
+    }
+    console.log(`======================================================\n`);
   });
 }
 

@@ -112,26 +112,46 @@ Learning a new language requires speaking practice with immediate, encouraging f
 
 ---
 
-## 4. Environment Variable Setup
+## 4. Environment Variable Setup & Local Laptop Guide
 
-Create a `.env` file in the project root:
+### 💻 Running Locally on Your Laptop (Quick Start)
 
-```bash
-# Required: Google Gemini API Key (accessed server-side only)
-GEMINI_API_KEY="your-gemini-api-key-here"
+When running the app locally on your laptop:
 
-# Optional external STT / TTS provider keys (if using Whisper or ElevenLabs)
-STT_API_KEY=""
-TTS_API_KEY=""
-```
+1. **Clone the repository and install dependencies**:
+   ```bash
+   git clone https://github.com/suman2006-cpu/AI-Voice-Tutor-Assistant.git
+   cd AI-Voice-Tutor-Assistant
+   npm install
+   ```
 
-In Google AI Studio, `GEMINI_API_KEY` is automatically injected into the server environment via the platform secrets store.
+2. **Configure your Gemini API Key**:
+   Create a `.env` file in the project root directory (you can copy `.env.example` to `.env`):
+   ```bash
+   cp .env.example .env
+   ```
+   Add your Gemini API key in `.env`:
+   ```env
+   GEMINI_API_KEY="your-gemini-api-key-here"
+   ```
+
+   > **Where do I get a free API key?**
+   > Get one in seconds from [Google AI Studio](https://aistudio.google.com/app/apikey). No credit card required.
+
+3. **Start the local server**:
+   ```bash
+   npm run dev
+   ```
+   Open `http://localhost:3000` in your web browser (Chrome, Edge, Safari, or Firefox).
+
+4. **Allow Microphone Access**:
+   When prompted by your browser on `localhost:3000`, click **"Allow"** to permit microphone access.
 
 ---
 
 ## 5. How to Run the Application
 
-### Option A: Integrated Node Full-Stack Server (Live Container)
+### Option A: Integrated Node Full-Stack Server (Recommended)
 
 1. **Install dependencies**:
    ```bash

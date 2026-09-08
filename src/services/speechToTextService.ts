@@ -50,7 +50,9 @@ export class SpeechToTextService {
       const errorMsg = err instanceof Error ? err.message : String(err);
       
       // User-friendly error mapping
-      if (errorMsg.includes('permission') || errorMsg.includes('NotAllowedError')) {
+      if (errorMsg.includes('GEMINI_API_KEY') || errorMsg.toLowerCase().includes('api key')) {
+        throw new Error('GEMINI_API_KEY is not configured on the server. Please add GEMINI_API_KEY in your .env file on your laptop and restart the server.');
+      } else if (errorMsg.includes('permission') || errorMsg.includes('NotAllowedError')) {
         throw new Error('Microphone permission denied. Please allow microphone access in your browser settings.');
       } else if (errorMsg.includes('No speech detected') || errorMsg.includes('silent')) {
         throw new Error('No speech detected. Please speak clearly into your microphone.');
